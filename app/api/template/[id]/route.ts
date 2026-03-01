@@ -28,10 +28,10 @@ function validateJsonStructure(data: unknown): boolean {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+  context: { params: { id: string } }
+): Promise<NextResponse> {
   try {
-    const { id } = params;
+    const { id } = context.params;
 
     /* ---------- Validate ID ---------- */
 
@@ -115,13 +115,19 @@ export async function GET(
       },
       { status: 200 }
     );
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error generating template JSON:", error);
+
+    let errorMessage = "Unknown error";
+
+    if (error instanceof Error) {
+      errorMessage = error.message;
+    }
 
     return NextResponse.json(
       {
         error: "Failed to generate template",
-        message: error?.message ?? "Unknown error",
+        message: errorMessage,
       },
       { status: 500 }
     );
