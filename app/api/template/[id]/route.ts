@@ -28,8 +28,8 @@ function validateJsonStructure(data: unknown): boolean {
 
 export async function GET(
   request: NextRequest,
-  context: { params: { id: string } }
-): Promise<NextResponse> {
+  context: any // 🔥 Let Next handle typing internally
+) {
   try {
     const { id } = context.params;
 
