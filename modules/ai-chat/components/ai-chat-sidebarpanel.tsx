@@ -47,7 +47,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import "katex/dist/katex.min.css";
 import Image from "next/image";
-import Stream from "stream";
+import type { Components } from "react-markdown";
+
+
 
 interface ChatMessage {
     role: "user" | "assistant";
@@ -106,6 +108,28 @@ const MessageTypeIndicator: React.FC<{
             </div>
         </div>
     );
+};
+
+const markdownComponents: Components = {
+  code({ children, className }) {
+    const isInline = !className;
+
+    if (isInline) {
+      return (
+        <code className="bg-zinc-800 px-1 py-0.5 rounded text-sm">
+          {children}
+        </code>
+      );
+    }
+
+    return (
+      <div className="bg-zinc-800 rounded-lg p-4 my-4">
+        <pre className="text-sm text-zinc-100 overflow-x-auto">
+          <code className={className}>{children}</code>
+        </pre>
+      </div>
+    );
+  },
 };
 
 export const AIChatSidePanel: React.FC<AIChatSidePanelProps> = ({
@@ -507,29 +531,12 @@ export const AIChatSidePanel: React.FC<AIChatSidePanelProps> = ({
 
                                             <div className="prose prose-invert prose-sm max-w-none">
                                                 <ReactMarkdown
-                                                    remarkPlugins={[remarkGfm, remarkMath]}
-                                                    rehypePlugins={[rehypeKatex]}
-                                                    components={{
-                                                        code: ({ children, className, inline }) => {
-                                                            if (inline) {
-                                                                return (
-                                                                    <code className="bg-zinc-800 px-1 py-0.5 rounded text-sm">
-                                                                        {children}
-                                                                    </code>
-                                                                );
-                                                            }
-                                                            return (
-                                                                <div className="bg-zinc-800 rounded-lg p-4 my-4">
-                                                                    <pre className="text-sm text-zinc-100 overflow-x-auto">
-                                                                        <code className={className}>{children}</code>
-                                                                    </pre>
-                                                                </div>
-                                                            );
-                                                        },
-                                                    }}
-                                                >
-                                                    {msg.content}
-                                                </ReactMarkdown>
+  remarkPlugins={[remarkGfm, remarkMath]}
+  rehypePlugins={[rehypeKatex]}
+  components={markdownComponents}
+>
+  {msg.content}
+</ReactMarkdown>
                                             </div>
 
                                             {/* Message actions */}
