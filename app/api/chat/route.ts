@@ -1,6 +1,18 @@
-import { db } from "@/lib/db";
-import { error } from "console";
 import { NextRequest, NextResponse } from "next/server";
+import Groq from "groq-sdk";
+
+// ✅ Safe env check (NO "!")
+const apiKey = process.env.GROQ_API_KEY;
+
+if (!apiKey) {
+  throw new Error("Missing GROQ_API_KEY in environment variables");
+}
+
+const groq = new Groq({ apiKey });
+
+/* ============================
+   TYPES
+============================ */
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -9,62 +21,49 @@ interface ChatMessage {
 
 interface ChatRequest {
   message: string;
-  history: ChatMessage[];
+  history?: ChatMessage[];
+  model?: string;
 }
 
-async function generateAIResponse(messages: ChatMessage[]): Promise<string> {
-  const systemPrompt = `You are a helpful AI coding assistant. You help developers with:
-- Code explanations and debugging
-- Best practices and architecture advice  
-- Writing clean, efficient code
-- Troubleshooting errors
-- Code reviews and optimizations
+/* ============================
+   ALLOWED MODELS
+============================ */
 
-Always provide clear, practical answers. Use proper code formatting when showing examples.`;
+const ALLOWED_MODELS = [
+  "llama3.1-8b-instant",
+  "llama-3.3-70b-versatile",
+  "mixtral-8x7b-32768",
+];
 
-  const fullMessages = [{ role: "system", content: systemPrompt }, ...messages];
+/* ============================
+   SYSTEM PROMPT
+============================ */
 
-  const prompt = fullMessages
-    .map((msg) => `${msg.role}: ${msg.content}`)
-    .join("\n\n");
+const SYSTEM_PROMPT = `
+You are a professional AI coding assistant.
 
-  try {
-   const response = await fetch("http://localhost:11434/api/generate", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "codellama:latest",
-        prompt: prompt,
-        stream: false,
-        options: {
-          temperature: 0.7, // Controls randomness (0-1)
-          max_tokens: 1000, // Maximum response length
-          top_p: 0.9, // controls diversity
-        },
-      }),
-    });
+You help developers with:
+- Debugging
+- Code explanations
+- Best practices
+- Clean architecture
+- Optimizations
+- Reviewing code
 
-    const data = await response.json();
+Always respond clearly and use proper code formatting.
+`;
 
-    if (!data.response) {
-      throw new Error("No response from AI model");
-    }
-
-    return data.response.trim();
-  } catch (error) {
-    console.error("AI generation error:", error);
-    throw new Error("Failed to generate AI response");
-  }
-}
+/* ============================
+   API HANDLER
+============================ */
 
 export async function POST(req: NextRequest) {
   try {
     const body: ChatRequest = await req.json();
-    const { message, history = [] } = body;
 
-    // Validate input
+    const { message, history = [], model } = body;
+
+    // ✅ Validate message
     if (!message || typeof message !== "string") {
       return NextResponse.json(
         { error: "Message is required and must be a string" },
@@ -72,45 +71,58 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Validate history format
-    const validHistory = Array.isArray(history)
+    // ✅ Validate history
+    const validHistory: ChatMessage[] = Array.isArray(history)
       ? history.filter(
           (msg) =>
             msg &&
             typeof msg === "object" &&
-            typeof msg.role === "string" &&
-            typeof msg.content === "string" &&
-            ["user", "assistant"].includes(msg.role)
+            (msg.role === "user" || msg.role === "assistant") &&
+            typeof msg.content === "string"
         )
       : [];
 
+    // Keep only last 10 messages
     const recentHistory = validHistory.slice(-10);
 
-    const messages: ChatMessage[] = [
-      ...recentHistory,
-      { role: "user", content: message },
-    ];
+    // ✅ Validate model safely
+    const selectedModel = ALLOWED_MODELS.includes(model || "")
+      ? model!
+      : "llama-3.1-8b-instant";
 
-    //   Generate ai response
+    /* ============================
+       CALL GROQ
+    ============================ */
 
-    const aiResponse = await generateAIResponse(messages);
+    const completion = await groq.chat.completions.create({
+      model: selectedModel,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        ...recentHistory,
+        { role: "user", content: message },
+      ],
+      temperature: 0.7,
+      max_tokens: 1000,
+      top_p: 0.9,
+    });
 
-
+    const aiResponse =
+      completion.choices[0]?.message?.content?.trim() ||
+      "No response generated.";
 
     return NextResponse.json({
       response: aiResponse,
+      model: selectedModel,
       timestamp: new Date().toISOString(),
     });
-  } catch (error) {
-    console.error("Chat API Error:", error);
 
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
+  } catch (error: any) {
+    console.error("Groq Full Error:", error);
 
     return NextResponse.json(
       {
         error: "Failed to generate AI response",
-        details: errorMessage,
+        details: error?.message || "Unknown error",
         timestamp: new Date().toISOString(),
       },
       { status: 500 }

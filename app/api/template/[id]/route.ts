@@ -6,11 +6,15 @@ import { db } from "@/lib/db";
 import { templatePaths } from "@/lib/template";
 import path from "path";
 import fs from "fs/promises";
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+
+/* ============================= */
+/* ===== JSON VALIDATION ======= */
+/* ============================= */
 
 function validateJsonStructure(data: unknown): boolean {
   try {
-    JSON.parse(JSON.stringify(data)); // Ensures it's serializable
+    JSON.parse(JSON.stringify(data));
     return true;
   } catch (error) {
     console.error("Invalid JSON structure:", error);
@@ -18,53 +22,108 @@ function validateJsonStructure(data: unknown): boolean {
   }
 }
 
+/* ============================= */
+/* ======== API ROUTE ========== */
+/* ============================= */
+
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
-
-const {id} = await params;
-
-if(!id){
-      return Response.json({ error: "Missing playground ID" }, { status: 400 });
-}
-
-const playground = await db.playground.findUnique({
-    where:{id}
-})
-
-  if (!playground) {
-    return Response.json({ error: "Playground not found" }, { status: 404 });
-  }
-  
-  const templateKey = playground.template as keyof typeof templatePaths;
-  const templatePath = templatePaths[templateKey]
-
-    if (!templatePath) {
-    return Response.json({ error: "Invalid template" }, { status: 404 });
-  }
-
   try {
-    const inputPath = path.join(process.cwd() , templatePath);
-    const outputFile = path.join(process.cwd() , `output/${templateKey}.json`);
+    const { id } = params;
 
-    await saveTemplateStructureToJson(inputPath , outputFile);
-    const result = await readTemplateStructureFromJson(outputFile);
+    /* ---------- Validate ID ---------- */
 
-
-    // Validate the JSON structure before saving
-    if (!validateJsonStructure(result.items)) {
-      return Response.json({ error: "Invalid JSON structure" }, { status: 500 });
+    if (!id || typeof id !== "string") {
+      return NextResponse.json(
+        { error: "Missing playground ID" },
+        { status: 400 }
+      );
     }
 
-    await fs.unlink(outputFile)
+    /* ---------- Fetch Playground ---------- */
 
+    const playground = await db.playground.findUnique({
+      where: { id },
+    });
 
-      return Response.json({ success: true, templateJson: result }, { status: 200 });
-  } catch (error) {
-      console.error("Error generating template JSON:", error);
-    return Response.json({ error: "Failed to generate template" }, { status: 500 });
+    if (!playground) {
+      return NextResponse.json(
+        { error: "Playground not found" },
+        { status: 404 }
+      );
+    }
+
+    /* ---------- Resolve Template ---------- */
+
+    const templateKey =
+      playground.template as keyof typeof templatePaths;
+
+    const templatePath = templatePaths[templateKey];
+
+    if (!templatePath) {
+      return NextResponse.json(
+        { error: "Invalid template" },
+        { status: 404 }
+      );
+    }
+
+    /* ---------- Build Paths ---------- */
+
+    const inputPath = path.join(process.cwd(), templatePath);
+
+    const outputDir = path.join(process.cwd(), "output");
+    const outputFile = path.join(
+      outputDir,
+      `${templateKey}-${id}.json`
+    );
+
+    /* ---------- Ensure Output Directory Exists ---------- */
+
+    await fs.mkdir(outputDir, { recursive: true });
+
+    /* ---------- Generate JSON ---------- */
+
+    await saveTemplateStructureToJson(inputPath, outputFile);
+
+    const result = await readTemplateStructureFromJson(outputFile);
+
+    /* ---------- Validate JSON ---------- */
+
+    if (!result || !validateJsonStructure(result.items)) {
+      return NextResponse.json(
+        { error: "Invalid JSON structure" },
+        { status: 500 }
+      );
+    }
+
+    /* ---------- Cleanup (Safe Delete) ---------- */
+
+    try {
+      await fs.unlink(outputFile);
+    } catch (cleanupError) {
+      console.warn("Temporary file cleanup failed:", cleanupError);
+    }
+
+    /* ---------- Success Response ---------- */
+
+    return NextResponse.json(
+      {
+        success: true,
+        templateJson: result,
+      },
+      { status: 200 }
+    );
+  } catch (error: any) {
+    console.error("Error generating template JSON:", error);
+
+    return NextResponse.json(
+      {
+        error: "Failed to generate template",
+        message: error?.message ?? "Unknown error",
+      },
+      { status: 500 }
+    );
   }
-
-
 }

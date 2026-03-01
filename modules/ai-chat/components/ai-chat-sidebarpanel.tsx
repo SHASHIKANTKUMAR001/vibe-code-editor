@@ -192,8 +192,6 @@ export const AIChatSidePanel: React.FC<AIChatSidePanelProps> = ({
             role: msg.role,
             content: msg.content,
           })),
-          stream: streamResponse,
-          mode: chatMode,
           model,
         }),
       });
@@ -391,9 +389,9 @@ export const AIChatSidePanel: React.FC<AIChatSidePanelProps> = ({
                                             onChange={(e) => setModel(e.target.value)}
                                             className="bg-zinc-900/60 border border-zinc-800 rounded px-2 py-1 text-zinc-200 focus:outline-none"
                                         >
-                                            <option value="gpt-6">gpt-6</option>
-                                            <option value="codellama">codellama</option>
-                                            <option value="llama2">llama2</option>
+                                            <option value="llama-3-8b-instant">llama3-8b-8192</option>
+                                            <option value="llama-3.-70b-versatile">llama3-70b-8192</option>
+                                            <option value="mixtral-8x7b-32768">mixtral-8x7b-32768</option>
                                         </select>
                                     </div>
                                     <div className="relative">
