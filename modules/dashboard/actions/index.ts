@@ -72,35 +72,28 @@ export const createPlayground = async (data: {
   title: string;
   template: "REACT" | "NEXTJS" | "EXPRESS" | "VUE" | "HONO" | "ANGULAR";
   description?: string;
-}): Promise<void> => {
+}) => {
   const user = await currentUser();
+
+  if (!user?.id) {
+    throw new Error("User not authenticated");
+  }
 
   const { template, title, description } = data;
 
   try {
-    await db.playground.create({
+    const playground = await db.playground.create({
       data: {
         title,
         description: description ?? null,
         template,
-        userId: user?.id!,
+        userId: user.id,
       },
     });
 
     revalidatePath("/dashboard");
-  } catch (error) {
-    console.log(error);
-    throw error;
-  }
-};
 
-export const deleteProjectById = async (id: string): Promise<void> => {
-  try {
-    await db.playground.delete({
-      where: { id },
-    });
-
-    revalidatePath("/dashboard");
+    return playground; // ✅ IMPORTANT
   } catch (error) {
     console.log(error);
     throw error;
