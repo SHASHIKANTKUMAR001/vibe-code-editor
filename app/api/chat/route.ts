@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
 
-// ✅ Safe env check (NO "!")
+/* ============================
+   SAFE ENV CHECK
+============================ */
+
 const apiKey = process.env.GROQ_API_KEY;
 
 if (!apiKey) {
@@ -33,7 +36,9 @@ const ALLOWED_MODELS = [
   "llama3.1-8b-instant",
   "llama-3.3-70b-versatile",
   "mixtral-8x7b-32768",
-];
+] as const;
+
+type AllowedModel = (typeof ALLOWED_MODELS)[number];
 
 /* ============================
    SYSTEM PROMPT
@@ -59,11 +64,14 @@ Always respond clearly and use proper code formatting.
 
 export async function POST(req: NextRequest) {
   try {
-    const body: ChatRequest = await req.json();
+    const body = (await req.json()) as ChatRequest;
 
     const { message, history = [], model } = body;
 
-    // ✅ Validate message
+    /* ============================
+       VALIDATE MESSAGE
+    ============================ */
+
     if (!message || typeof message !== "string") {
       return NextResponse.json(
         { error: "Message is required and must be a string" },
@@ -71,24 +79,34 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ✅ Validate history
+    /* ============================
+       VALIDATE HISTORY
+    ============================ */
+
     const validHistory: ChatMessage[] = Array.isArray(history)
       ? history.filter(
-          (msg) =>
-            msg &&
-            typeof msg === "object" &&
-            (msg.role === "user" || msg.role === "assistant") &&
-            typeof msg.content === "string"
+          (msg): msg is ChatMessage =>
+            Boolean(
+              msg &&
+                typeof msg === "object" &&
+                (msg as ChatMessage).role &&
+                ((msg as ChatMessage).role === "user" ||
+                  (msg as ChatMessage).role === "assistant") &&
+                typeof (msg as ChatMessage).content === "string"
+            )
         )
       : [];
 
-    // Keep only last 10 messages
     const recentHistory = validHistory.slice(-10);
 
-    // ✅ Validate model safely
-    const selectedModel = ALLOWED_MODELS.includes(model || "")
-      ? model!
-      : "llama-3.1-8b-instant";
+    /* ============================
+       VALIDATE MODEL
+    ============================ */
+
+    const selectedModel: AllowedModel =
+      model && ALLOWED_MODELS.includes(model as AllowedModel)
+        ? (model as AllowedModel)
+        : "llama3.1-8b-instant";
 
     /* ============================
        CALL GROQ
@@ -107,7 +125,7 @@ export async function POST(req: NextRequest) {
     });
 
     const aiResponse =
-      completion.choices[0]?.message?.content?.trim() ||
+      completion.choices?.[0]?.message?.content?.trim() ??
       "No response generated.";
 
     return NextResponse.json({
@@ -115,14 +133,19 @@ export async function POST(req: NextRequest) {
       model: selectedModel,
       timestamp: new Date().toISOString(),
     });
-
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Groq Full Error:", error);
+
+    let errorMessage = "Unknown error";
+
+    if (error instanceof Error) {
+      errorMessage = error.message;
+    }
 
     return NextResponse.json(
       {
         error: "Failed to generate AI response",
-        details: error?.message || "Unknown error",
+        details: errorMessage,
         timestamp: new Date().toISOString(),
       },
       { status: 500 }
